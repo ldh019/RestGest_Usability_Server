@@ -1,10 +1,9 @@
 import socket
-import threading
-import numpy as np
 import joblib
-from .feature_extractor import FeatureExtractor
+import numpy as np
+from game.config import PORT, N, CHANNELS
 from utils.data_logger import DataLogger
-from game.config import HOST, PORT, N, CHANNELS
+from .feature_extractor import FeatureExtractor
 
 
 class GestureServer:
@@ -70,7 +69,7 @@ class GestureServer:
                         self.game.client_port = addr[1]
 
                         buffer = ""
-                        while self.running:
+                        while self.running and self.game.is_connected:
                             try:
                                 data = conn.recv(4096).decode()
                                 if not data:
@@ -87,9 +86,11 @@ class GestureServer:
                                         window_data = np.array([r.split(",") for r in rows], dtype=object)
 
                                         if window_data.shape[0] == N and window_data.shape[1] == CHANNELS:
-                                            save_path = self.data_logger.save_sensor_window(
-                                                window_data, self.window_counter
-                                            )
+                                            self.window_counter += 1
+                                            # 실험명 기반으로 센서 데이터 저장
+                                            experiment_name = f"user{self.game.user_number}_{self.game.condition}"
+                                            save_path = self.data_logger.save_sensor_window(window_data,
+                                                                                            self.window_counter)
 
                                             ax, ay, az = window_data[:, 1:4].astype(float).T
                                             gx, gy, gz = window_data[:, 5:8].astype(float).T
@@ -102,13 +103,8 @@ class GestureServer:
 
                                             gesture = self.process_gesture(prediction)
                                             if gesture:
-                                                self.game.add_gesture(gesture)
-
-                                                self.data_logger.log_game_event("gesture_detected", {
-                                                    "prediction": prediction,
-                                                    "mapped_gesture": gesture,
-                                                    "window_file": save_path
-                                                })
+                                                # window_id와 함께 제스처 전달
+                                                self.game.add_gesture(gesture, self.window_counter)
 
                                     except Exception as e:
                                         print(f"Parse error: {e}")

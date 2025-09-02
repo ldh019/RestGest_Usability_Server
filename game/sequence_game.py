@@ -1,11 +1,9 @@
-import pygame
+import queue
 import random
 import time
-import queue
-from datetime import datetime
-from .config import *
+import pygame
 from utils.data_logger import DataLogger
-import threading
+from .config import *
 
 
 class SequenceGame:
@@ -14,7 +12,7 @@ class SequenceGame:
         self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
         pygame.display.set_caption("RestGest Sequence Game")
 
-        # 폰트 설정
+        # 폰트 설정 (기본 폰트 사용)
         self.font_large = pygame.font.Font(None, 72)
         self.font_medium = pygame.font.Font(None, 48)
         self.font_small = pygame.font.Font(None, 32)
@@ -55,6 +53,10 @@ class SequenceGame:
         self.feedback_message = None
         self.feedback_end_time = 0
 
+        # 맞은 개수와 틀린 개수 추적
+        self.correct_gestures = 0
+        self.incorrect_gestures = 0
+
     def reset_game(self):
         """게임 초기화"""
         self.current_level = 1
@@ -66,11 +68,13 @@ class SequenceGame:
         self.score = 0
         self.fatigue_rating = 5
         self.levels_completed = 0
+        self.correct_gestures = 0  # 맞은 개수 초기화
+        self.incorrect_gestures = 0  # 틀린 개수 초기화
         # self.game_state는 외부에서 설정하므로 초기화하지 않음
 
-    def add_gesture(self, gesture):
+    def add_gesture(self, gesture, window_id=None):
         """외부에서 제스처 입력 추가"""
-        self.gesture_queue.put(gesture)
+        self.gesture_queue.put((gesture, window_id))
 
     def generate_sequence(self, length):
         """지정된 길이의 랜덤 시퀀스 생성"""
@@ -94,7 +98,7 @@ class SequenceGame:
             "sequence_length": len(self.sequence)
         })
 
-    def process_gesture(self, gesture):
+    def process_gesture(self, gesture, window_id):
         """제스처 입력 처리"""
         if self.game_state == "playing" and self.waiting_for_input:
             if gesture in ['LEFT', 'RIGHT']:
@@ -102,6 +106,11 @@ class SequenceGame:
 
                 # 정확도 확인
                 correct = (gesture == self.sequence[len(self.player_input) - 1])
+
+                if correct:
+                    self.correct_gestures += 1
+                else:
+                    self.incorrect_gestures += 1
 
                 # 로깅
                 reaction_time = time.time() - self.level_start_time
@@ -111,11 +120,12 @@ class SequenceGame:
                     "correct": correct,
                     "reaction_time": reaction_time,
                     "input_position": len(self.player_input),
-                    "sequence_length": len(self.sequence)
+                    "sequence_length": len(self.sequence),
+                    "window_id": window_id
                 })
 
                 if not correct:
-                    self.feedback_message = "틀렸습니다!"
+                    self.feedback_message = "Incorrect!"
                     self.feedback_end_time = time.time() + 1
                     self.data_logger.log_game_event("level_failed", {
                         "level": self.current_level,
@@ -123,7 +133,7 @@ class SequenceGame:
                     })
                     return
 
-                self.feedback_message = "정확합니다!"
+                self.feedback_message = "Correct!"
                 self.feedback_end_time = time.time() + 0.5
 
         elif self.game_state == "fatigue_check":
@@ -137,16 +147,16 @@ class SequenceGame:
         # 제스처 큐 처리
         try:
             while not self.gesture_queue.empty():
-                gesture = self.gesture_queue.get_nowait()
-                self.process_gesture(gesture)
+                gesture, window_id = self.gesture_queue.get_nowait()
+                self.process_gesture(gesture, window_id)
         except queue.Empty:
             pass
 
         # 입력 피드백 및 상태 전환 처리
         if self.feedback_message and time.time() >= self.feedback_end_time:
-            if self.feedback_message == "틀렸습니다!":
+            if self.feedback_message == "Incorrect!":
                 self.start_level()
-            elif self.feedback_message == "정확합니다!":
+            elif self.feedback_message == "Correct!":
                 if len(self.player_input) == len(self.sequence):
                     level_completion_time = time.time() - self.level_start_time
                     self.score += self.current_level * 10
@@ -204,6 +214,8 @@ class SequenceGame:
         elif self.game_state == "fatigue_check":
             self.draw_fatigue_check()
             self.draw_back_button()
+        elif self.game_state == "post_game":
+            self.draw_post_game_screen()
         elif self.game_state == "finished":
             self.draw_finished_screen()
 
@@ -291,8 +303,8 @@ class SequenceGame:
         # 상태 표시
         level_text = self.font_medium.render(f"Level: {self.current_level}", True, BLACK)
         score_text = self.font_medium.render(f"Score: {self.score}", True, BLACK)
-        self.screen.blit(level_text, (50, 50))
-        self.screen.blit(score_text, (50, 100))
+        self.screen.blit(level_text, (50, 100))  # 점수 위치 아래로 이동
+        self.screen.blit(score_text, (50, 150))  # 점수 위치 아래로 이동
 
         if self.showing_sequence:
             # 시퀀스 표시
@@ -318,7 +330,7 @@ class SequenceGame:
 
             # 피드백 메시지 표시
             if self.feedback_message:
-                feedback_color = GREEN if self.feedback_message == "정확합니다!" else RED
+                feedback_color = GREEN if self.feedback_message == "Correct!" else RED
                 feedback_text = self.font_medium.render(self.feedback_message, True, feedback_color)
                 feedback_rect = feedback_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
                 self.screen.blit(feedback_text, feedback_rect)
@@ -376,8 +388,28 @@ class SequenceGame:
         self.screen.blit(rating_text, (WINDOW_WIDTH // 2 - 40, 550))
         self.screen.blit(confirm_text, (WINDOW_WIDTH // 2 - 150, 700))
 
+    def draw_post_game_screen(self):
+        """게임 종료 후 옵션 화면"""
+        title_text = self.font_large.render("Game Completed!", True, BLACK)
+        title_rect = title_text.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 200))
+        self.screen.blit(title_text, title_rect)
+
+        # Play Again 버튼
+        play_again_rect = pygame.Rect(WINDOW_WIDTH // 4, WINDOW_HEIGHT // 2, 300, 100)
+        pygame.draw.rect(self.screen, BLUE, play_again_rect, border_radius=10)
+        play_again_text = self.font_medium.render("Play Again", True, WHITE)
+        play_again_text_rect = play_again_text.get_rect(center=play_again_rect.center)
+        self.screen.blit(play_again_text, play_again_text_rect)
+
+        # Home 버튼
+        home_rect = pygame.Rect(WINDOW_WIDTH * 3 // 4 - 300, WINDOW_HEIGHT // 2, 300, 100)
+        pygame.draw.rect(self.screen, RED, home_rect, border_radius=10)
+        home_text = self.font_medium.render("Home", True, WHITE)
+        home_text_rect = home_text.get_rect(center=home_rect.center)
+        self.screen.blit(home_text, home_text_rect)
+
     def draw_finished_screen(self):
-        """완료 화면"""
+        """최종 종료 화면"""
         finished_text = self.font_large.render("Game Finished!", True, BLACK)
         final_score_text = self.font_medium.render(f"Final Score: {self.score}", True, BLACK)
         info_text = self.font_small.render("Results saved. You can close the window.", True, BLACK)
@@ -393,14 +425,16 @@ class SequenceGame:
     def handle_event(self, event):
         """이벤트 처리"""
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.back_button_rect.collidepoint(event.pos) and self.game_state not in ["start_screen", "finished"]:
+            if self.back_button_rect.collidepoint(event.pos) and self.game_state not in ["start_screen", "finished",
+                                                                                         "post_game"]:
                 if self.game_state == "connecting_screen":
-                    self.on_connection_lost()
+                    self.server_lost_connection = True
                     self.game_state = "start_screen"
                 elif self.game_state == "ready":
                     self.is_connected = False
                     self.client_ip = None
                     self.client_port = None
+                    self.server_lost_connection = True  # 서버 연결 종료 신호
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"
@@ -409,15 +443,27 @@ class SequenceGame:
                     self.game_state = "playing"
                     self.reset_game_state()
 
+            # 게임 후 옵션 버튼 클릭 처리
+            if self.game_state == "post_game":
+                play_again_rect = pygame.Rect(WINDOW_WIDTH // 4, WINDOW_HEIGHT // 2, 300, 100)
+                home_rect = pygame.Rect(WINDOW_WIDTH * 3 // 4 - 300, WINDOW_HEIGHT // 2, 300, 100)
+                if play_again_rect.collidepoint(event.pos):
+                    self.reset_game_for_new_session()
+                elif home_rect.collidepoint(event.pos):
+                    self.server_lost_connection = True
+                    self.reset_game()
+                    self.game_state = "start_screen"
+
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE and self.game_state not in ["start_screen", "finished"]:
+            if event.key == pygame.K_ESCAPE and self.game_state not in ["start_screen", "finished", "post_game"]:
                 if self.game_state == "connecting_screen":
-                    self.on_connection_lost()
+                    self.server_lost_connection = True
                     self.game_state = "start_screen"
                 elif self.game_state == "ready":
                     self.is_connected = False
                     self.client_ip = None
                     self.client_port = None
+                    self.server_lost_connection = True  # 서버 연결 종료 신호
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"
@@ -447,16 +493,22 @@ class SequenceGame:
             elif self.game_state == "fatigue_check":
                 if event.key == pygame.K_SPACE:
                     self.finish_game()
+                elif event.key == pygame.K_LEFT:
+                    self.process_gesture('LEFT', None)
+                elif event.key == pygame.K_RIGHT:
+                    self.process_gesture('RIGHT', None)
             elif self.game_state == "playing" and self.waiting_for_input:
                 if event.key == pygame.K_LEFT:
-                    self.process_gesture('LEFT')
+                    self.process_gesture('LEFT', None)
                 elif event.key == pygame.K_RIGHT:
-                    self.process_gesture('RIGHT')
-            elif self.game_state == "fatigue_check":
+                    self.process_gesture('RIGHT', None)
+            elif self.game_state == "post_game":
                 if event.key == pygame.K_LEFT:
-                    self.process_gesture('LEFT')
+                    self.reset_game_for_new_session()
                 elif event.key == pygame.K_RIGHT:
-                    self.process_gesture('RIGHT')
+                    self.server_lost_connection = True
+                    self.reset_game()
+                    self.game_state = "start_screen"
 
     def reset_game_state(self):
         """게임을 초기 상태로 돌리는 도우미 함수"""
@@ -466,6 +518,21 @@ class SequenceGame:
         self.showing_sequence = False
         self.waiting_for_input = False
         self.sequence_index = 0
+
+    def reset_game_for_new_session(self):
+        """현재 조건과 유저 번호를 유지하고 게임을 리셋"""
+        self.current_level = 1
+        self.sequence = []
+        self.player_input = []
+        self.showing_sequence = False
+        self.waiting_for_input = False
+        self.sequence_index = 0
+        self.score = 0
+        self.fatigue_rating = 5
+        self.levels_completed = 0
+        self.correct_gestures = 0
+        self.incorrect_gestures = 0
+        self.game_state = "ready"
 
     def on_connection_lost(self):
         """서버 연결 끊김 시 호출되는 메서드"""
@@ -482,5 +549,5 @@ class SequenceGame:
         self.data_logger.log_game_event("fatigue_rating", {
             "rating": self.fatigue_rating
         })
-        self.data_logger.save_experiment_results(f"user{self.user_number}_{self.condition}")
-        self.game_state = "finished"
+        self.data_logger.save_experiment_results(f"user{self.user_number}_{self.condition}", self.correct_gestures, self.incorrect_gestures)
+        self.game_state = "post_game"
