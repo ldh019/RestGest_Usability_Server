@@ -1,1 +1,7 @@
 received_window/
+assets/
+game/__pycache__/
+gesture/__pycache__/
+utils/__pycache__/
+models/__pycache__/
+.idea
