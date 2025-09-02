@@ -395,9 +395,12 @@ class SequenceGame:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if self.back_button_rect.collidepoint(event.pos) and self.game_state not in ["start_screen", "finished"]:
                 if self.game_state == "connecting_screen":
+                    self.on_connection_lost()
                     self.game_state = "start_screen"
-                    self.server_lost_connection = True
                 elif self.game_state == "ready":
+                    self.is_connected = False
+                    self.client_ip = None
+                    self.client_port = None
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"
@@ -409,9 +412,12 @@ class SequenceGame:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE and self.game_state not in ["start_screen", "finished"]:
                 if self.game_state == "connecting_screen":
+                    self.on_connection_lost()
                     self.game_state = "start_screen"
-                    self.server_lost_connection = True
                 elif self.game_state == "ready":
+                    self.is_connected = False
+                    self.client_ip = None
+                    self.client_port = None
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"

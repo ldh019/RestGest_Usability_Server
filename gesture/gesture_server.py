@@ -59,65 +59,65 @@ class GestureServer:
 
             self.server_socket.settimeout(1)
 
-            try:
-                conn, addr = self.server_socket.accept()
-                with conn:
-                    print(f"Connected by {addr}")
-                    self.game.is_connected = True
-                    self.game.client_ip = addr[0]
-                    self.game.client_port = addr[1]
+            # 서버 스레드가 종료되지 않고 계속해서 연결을 기다리도록 루프 추가
+            while self.running:
+                try:
+                    conn, addr = self.server_socket.accept()
+                    with conn:
+                        print(f"Connected by {addr}")
+                        self.game.is_connected = True
+                        self.game.client_ip = addr[0]
+                        self.game.client_port = addr[1]
 
-                    buffer = ""
+                        buffer = ""
+                        while self.running:
+                            try:
+                                data = conn.recv(4096).decode()
+                                if not data:
+                                    self.game.on_connection_lost()
+                                    break
+                                buffer += data
 
-                    while self.running:
-                        try:
-                            data = conn.recv(4096).decode()
-                            if not data:
+                                while "[START]" in buffer and "[END]" in buffer:
+                                    block = buffer.split("[START]", 1)[1].split("[END]", 1)[0]
+                                    buffer = buffer.split("[END]", 1)[1]
+
+                                    try:
+                                        rows = block.strip().split("\n")
+                                        window_data = np.array([r.split(",") for r in rows], dtype=object)
+
+                                        if window_data.shape[0] == N and window_data.shape[1] == CHANNELS:
+                                            save_path = self.data_logger.save_sensor_window(
+                                                window_data, self.window_counter
+                                            )
+
+                                            ax, ay, az = window_data[:, 1:4].astype(float).T
+                                            gx, gy, gz = window_data[:, 5:8].astype(float).T
+                                            sensor_data = np.column_stack([ax, ay, az, gx, gy, gz])
+
+                                            features = self.feature_extractor.extract_fft_features(sensor_data)
+                                            prediction = self.svm_model.predict(features.reshape(1, -1))[0]
+
+                                            print(f"Predicted gesture: {prediction}")
+
+                                            gesture = self.process_gesture(prediction)
+                                            if gesture:
+                                                self.game.add_gesture(gesture)
+
+                                                self.data_logger.log_game_event("gesture_detected", {
+                                                    "prediction": prediction,
+                                                    "mapped_gesture": gesture,
+                                                    "window_file": save_path
+                                                })
+
+                                    except Exception as e:
+                                        print(f"Parse error: {e}")
+                            except Exception as e:
+                                print(f"Connection error: {e}")
                                 self.game.on_connection_lost()
                                 break
-                            buffer += data
-
-                            while "[START]" in buffer and "[END]" in buffer:
-                                block = buffer.split("[START]", 1)[1].split("[END]", 1)[0]
-                                buffer = buffer.split("[END]", 1)[1]
-
-                                try:
-                                    rows = block.strip().split("\n")
-                                    window_data = np.array([r.split(",") for r in rows], dtype=object)
-
-                                    if window_data.shape[0] == N and window_data.shape[1] == CHANNELS:
-                                        save_path = self.data_logger.save_sensor_window(
-                                            window_data, self.window_counter
-                                        )
-
-                                        ax, ay, az = window_data[:, 1:4].astype(float).T
-                                        gx, gy, gz = window_data[:, 5:8].astype(float).T
-                                        sensor_data = np.column_stack([ax, ay, az, gx, gy, gz])
-
-                                        features = self.feature_extractor.extract_fft_features(sensor_data)
-                                        prediction = self.svm_model.predict(features.reshape(1, -1))[0]
-
-                                        print(f"Predicted gesture: {prediction}")
-
-                                        gesture = self.process_gesture(prediction)
-                                        if gesture:
-                                            self.game.add_gesture(gesture)
-
-                                            self.data_logger.log_game_event("gesture_detected", {
-                                                "prediction": prediction,
-                                                "mapped_gesture": gesture,
-                                                "window_file": save_path
-                                            })
-
-                                except Exception as e:
-                                    print(f"Parse error: {e}")
-
-                        except Exception as e:
-                            print(f"Connection error: {e}")
-                            self.game.on_connection_lost()
-                            break
-            except socket.timeout:
-                pass
+                except socket.timeout:
+                    pass
 
         except Exception as e:
             if self.running:

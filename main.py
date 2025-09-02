@@ -25,7 +25,17 @@ def main():
             else:
                 game.handle_event(event)
 
-        # 서버 연결 끊김 감지 및 정리
+        # 연결된 상태에서 연결 끊김 감지 및 정리
+        if game.condition == 'condition2' and not game.is_connected and game.game_state not in ["start_screen",
+                                                                                                "connecting_screen",
+                                                                                                "finished"]:
+            print("Connection lost while in game. Resetting to start screen.")
+            game.game_state = "start_screen"
+            if gesture_server:
+                gesture_server.stop_server()
+            gesture_server = None
+
+        # 서버 연결 끊김 감지 및 정리 (외부 또는 사용자에 의해 끊겼을 경우)
         if game.server_lost_connection:
             if gesture_server:
                 gesture_server.stop_server()
@@ -37,37 +47,29 @@ def main():
             game.server_ip = socket.gethostbyname(socket.gethostname())
 
             if game.condition == 'condition2':
-                ports = [9090, 9091]
-                server_started = False
-                for port in ports:
-                    try:
-                        model_path = f"assets/model/svm_model_user{game.user_number}.pkl"
-                        gesture_server = GestureServer(game, model_path)
-                        gesture_server.PORT = port
-                        server_thread = threading.Thread(target=gesture_server.start_server, daemon=True)
-                        server_thread.start()
-                        game.server_port = port
-                        server_started = True
-                        print(f"Server started on port {port} with model: {model_path}")
-                        break
-                    except OSError as e:
-                        if e.errno == 98:  # 98은 "Address already in use" 에러 코드
-                            print(f"Port {port} is already in use. Trying next port...")
-                            continue
-                        else:
-                            print(f"Server start error: {e}")
-                            game.game_state = "start_screen"
-                            game.condition = None
-                            break
-                    except FileNotFoundError:
-                        print(f"Error: Model file not found at {model_path}. Please check the file path.")
+                port = 9090
+                try:
+                    model_path = f"assets/model/svm_model_user{game.user_number}.pkl"
+                    gesture_server = GestureServer(game, model_path)
+                    gesture_server.PORT = port
+                    server_thread = threading.Thread(target=gesture_server.start_server, daemon=True)
+                    server_thread.start()
+                    game.server_port = port
+                    print(f"Server started on port {port} with model: {model_path}")
+                except OSError as e:
+                    if e.errno == 98:  # "Address already in use" 에러 코드
+                        print(f"Error: Port {port} is already in use. Please close the other program.")
                         game.game_state = "start_screen"
                         game.condition = None
-                        break
-                if not server_started:
-                    print("Failed to start server on both ports.")
+                    else:
+                        print(f"Server start error: {e}")
+                        game.game_state = "start_screen"
+                        game.condition = None
+                except FileNotFoundError:
+                    print(f"Error: Model file not found at {model_path}. Please check the file path.")
                     game.game_state = "start_screen"
                     game.condition = None
+
             else:  # Condition 1
                 game.server_port = None
                 game.is_connected = True

@@ -1,5 +1,5 @@
 received_window/
-assets/
+assets/model
 game/__pycache__/
 gesture/__pycache__/
 utils/__pycache__/
