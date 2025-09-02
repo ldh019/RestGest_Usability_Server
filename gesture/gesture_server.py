@@ -1,9 +1,11 @@
 import socket
-import joblib
+import threading
 import numpy as np
-from game.config import PORT, N, CHANNELS
-from utils.data_logger import DataLogger
+import joblib
 from .feature_extractor import FeatureExtractor
+from utils.data_logger import DataLogger
+from game.config import HOST, PORT, N, CHANNELS
+import time
 
 
 class GestureServer:
@@ -43,25 +45,21 @@ class GestureServer:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-            # get_local_ip() 함수를 사용하여 실제 로컬 IP로 바인딩
             local_ip = self.get_local_ip()
             self.server_socket.bind((local_ip, self.PORT))
 
-            # 서버가 성공적으로 바인딩되었음을 로그에 출력
             print(f"Server bound to {local_ip}:{self.PORT}")
 
             self.server_socket.listen(1)
 
-            # 메인 게임 객체에 서버 정보 업데이트
             self.game.server_ip = local_ip
             self.game.server_port = self.PORT
 
-            self.server_socket.settimeout(1)
-
-            # 서버 스레드가 종료되지 않고 계속해서 연결을 기다리도록 루프 추가
             while self.running:
                 try:
                     conn, addr = self.server_socket.accept()
+                    # 연결된 소켓에는 타임아웃을 설정하지 않아 데이터가 올 때까지 무기한 대기
+                    # conn.settimeout(5) # 이 부분을 제거합니다.
                     with conn:
                         print(f"Connected by {addr}")
                         self.game.is_connected = True
@@ -87,8 +85,10 @@ class GestureServer:
 
                                         if window_data.shape[0] == N and window_data.shape[1] == CHANNELS:
                                             self.window_counter += 1
-                                            # 실험명 기반으로 센서 데이터 저장
                                             experiment_name = f"user{self.game.user_number}_{self.game.condition}"
+                                            # 실험 디렉토리가 생성되지 않았다면 여기서 생성
+                                            if self.data_logger.experiment_name is None:
+                                                self.data_logger.create_experiment_directories(experiment_name)
                                             save_path = self.data_logger.save_sensor_window(window_data,
                                                                                             self.window_counter)
 
@@ -103,16 +103,20 @@ class GestureServer:
 
                                             gesture = self.process_gesture(prediction)
                                             if gesture:
-                                                # window_id와 함께 제스처 전달
                                                 self.game.add_gesture(gesture, self.window_counter)
 
                                     except Exception as e:
                                         print(f"Parse error: {e}")
+                            except socket.timeout:
+                                # 연결된 소켓의 타임아웃이 발생하면, 이는 데이터가 잠시 없는 것일 뿐
+                                # 연결이 끊긴 것은 아니므로, 계속 대기합니다.
+                                continue
                             except Exception as e:
                                 print(f"Connection error: {e}")
                                 self.game.on_connection_lost()
                                 break
                 except socket.timeout:
+                    # accept() 타임아웃 발생 시 무시하고 다음 루프 진행
                     pass
 
         except Exception as e:

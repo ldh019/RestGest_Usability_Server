@@ -25,16 +25,6 @@ def main():
             else:
                 game.handle_event(event)
 
-        # 연결된 상태에서 연결 끊김 감지 및 정리
-        if game.condition == 'condition2' and not game.is_connected and game.game_state not in ["start_screen",
-                                                                                                "connecting_screen",
-                                                                                                "finished"]:
-            print("Connection lost while in game. Resetting to start screen.")
-            game.game_state = "start_screen"
-            if gesture_server:
-                gesture_server.stop_server()
-            gesture_server = None
-
         # 서버 연결 끊김 감지 및 정리 (외부 또는 사용자에 의해 끊겼을 경우)
         if game.server_lost_connection:
             if gesture_server:
