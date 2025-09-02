@@ -29,8 +29,8 @@ class GestureServer:
 
     def process_gesture(self, prediction):
         """제스처 예측 결과를 게임 입력으로 변환"""
-        left_gestures = ['FL', 'GL', 'PL', 'TL']
-        right_gestures = ['FR', 'GR', 'PR', 'TR']
+        left_gestures = ['pinchL']
+        right_gestures = ['pinchR']
 
         if prediction in left_gestures:
             return 'LEFT'
