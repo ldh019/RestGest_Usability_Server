@@ -1,6 +1,6 @@
 # 게임 설정
-WINDOW_WIDTH = 1200
-WINDOW_HEIGHT = 800
+WINDOW_WIDTH = 1600
+WINDOW_HEIGHT = 1200
 
 # 색상
 WHITE = (255, 255, 255)
@@ -12,7 +12,7 @@ GRAY = (128, 128, 128)
 
 # 네트워크 설정
 HOST = '0.0.0.0'
-PORT = 9091
+PORT = 9090
 
 # 센서 설정
 FS = 400
