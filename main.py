@@ -71,6 +71,7 @@ async def main():
         clock.tick(60)
 
     if server_task:
+        print("Cancelling server task...")
         server_task.cancel()
     pygame.quit()
 

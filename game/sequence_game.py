@@ -1,3 +1,5 @@
+# ldh019/restgest_usability_server/RestGest_Usability_Server-sequence_game/game/sequence_game.py
+
 import queue
 import random
 import time
@@ -101,6 +103,9 @@ class SequenceGame:
     def process_gesture(self, gesture, window_id):
         """제스처 입력 처리"""
         if self.game_state == "playing" and self.waiting_for_input:
+            if len(self.player_input) >= len(self.sequence):  # 초과 입력 무시
+                return
+
             if gesture in ['LEFT', 'RIGHT']:
                 self.player_input.append(gesture)
 
@@ -131,10 +136,10 @@ class SequenceGame:
                         "level": self.current_level,
                         "failed_at_position": len(self.player_input)
                     })
-                    return
-
-                self.feedback_message = "Correct!"
-                self.feedback_end_time = time.time() + 0.5
+                    # 레벨을 다시 시작하는 부분을 제거했습니다.
+                else:
+                    self.feedback_message = "Correct!"
+                    self.feedback_end_time = time.time() + 0.5
 
         elif self.game_state == "fatigue_check":
             if gesture == "LEFT" and self.fatigue_rating > 1:
@@ -154,31 +159,32 @@ class SequenceGame:
 
         # 입력 피드백 및 상태 전환 처리
         if self.feedback_message and time.time() >= self.feedback_end_time:
-            if self.feedback_message == "Incorrect!":
-                self.start_level()
-            elif self.feedback_message == "Correct!":
-                if len(self.player_input) == len(self.sequence):
-                    level_completion_time = time.time() - self.level_start_time
+            # 피드백 메시지 종료 후 다음 단계로 진행 (오답이어도 계속)
+            if len(self.player_input) == len(self.sequence):
+                level_completion_time = time.time() - self.level_start_time
+                # 점수는 맞았을 때만 부여
+                if self.feedback_message == "Correct!":
                     self.score += self.current_level * 10
-                    self.levels_completed += 1
+                self.levels_completed += 1
 
-                    self.data_logger.log_game_event("level_completed", {
-                        "level": self.current_level,
-                        "completion_time": level_completion_time,
-                        "score_gained": self.current_level * 10,
-                        "total_score": self.score
+                self.data_logger.log_game_event("level_completed", {
+                    "level": self.current_level,
+                    "completion_time": level_completion_time,
+                    "score_gained": self.current_level * 10 if self.feedback_message == "Correct!" else 0,
+                    "total_score": self.score
+                })
+
+                if self.current_level == 3:
+                    self.game_state = "fatigue_check"
+                    self.data_logger.log_game_event("all_levels_completed", {
+                        "final_score": self.score,
+                        "total_levels": self.levels_completed
                     })
-
-                    if self.current_level == 9:
-                        self.game_state = "fatigue_check"
-                        self.data_logger.log_game_event("all_levels_completed", {
-                            "final_score": self.score,
-                            "total_levels": self.levels_completed
-                        })
-                    else:
-                        self.current_level += 1
-                        self.start_level()
+                else:
+                    self.current_level += 1
+                    self.start_level()
             self.feedback_message = None
+
 
         # 시퀀스 표시 타이머
         if self.showing_sequence:
@@ -425,8 +431,7 @@ class SequenceGame:
     def handle_event(self, event):
         """이벤트 처리"""
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.back_button_rect.collidepoint(event.pos) and self.game_state not in ["start_screen", "finished",
-                                                                                         "post_game"]:
+            if self.back_button_rect.collidepoint(event.pos) and self.game_state not in ["start_screen", "finished", "post_game"]:
                 if self.game_state == "connecting_screen":
                     self.server_lost_connection = True
                     self.game_state = "start_screen"
@@ -434,7 +439,7 @@ class SequenceGame:
                     self.is_connected = False
                     self.client_ip = None
                     self.client_port = None
-                    self.server_lost_connection = True  # 서버 연결 종료 신호
+                    self.server_lost_connection = True
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"
@@ -443,7 +448,6 @@ class SequenceGame:
                     self.game_state = "playing"
                     self.reset_game_state()
 
-            # 게임 후 옵션 버튼 클릭 처리
             if self.game_state == "post_game":
                 play_again_rect = pygame.Rect(WINDOW_WIDTH // 4, WINDOW_HEIGHT // 2, 300, 100)
                 home_rect = pygame.Rect(WINDOW_WIDTH * 3 // 4 - 300, WINDOW_HEIGHT // 2, 300, 100)
@@ -463,7 +467,7 @@ class SequenceGame:
                     self.is_connected = False
                     self.client_ip = None
                     self.client_port = None
-                    self.server_lost_connection = True  # 서버 연결 종료 신호
+                    self.server_lost_connection = True
                     self.game_state = "connecting_screen"
                 elif self.game_state == "playing":
                     self.game_state = "ready"
@@ -479,7 +483,7 @@ class SequenceGame:
                     self.condition = "condition1"
                 elif event.key == pygame.K_RIGHT:
                     self.condition = "condition2"
-                elif event.key >= pygame.K_0 and event.key <= pygame.K_9:
+                elif pygame.key.name(event.key).isdigit():
                     self.user_number += pygame.key.name(event.key)
                 elif event.key == pygame.K_SPACE:
                     if self.user_number and self.condition:
