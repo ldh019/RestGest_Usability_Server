@@ -1,9 +1,8 @@
-# network.py
-
 import socket
 import threading
 import select
 import time
+
 
 class NetworkManager:
     def __init__(self, server_ip, server_port):
@@ -14,6 +13,8 @@ class NetworkManager:
         self.connection_lock = threading.Lock()
         self.device1_connected = False
         self.device2_connected = False
+        self.device1_data_received = False
+        self.device2_data_received = False
 
     def handle_client(self, conn, addr, device_num):
         print(f"기기 {device_num} ({addr}) 연결됨")
@@ -31,6 +32,13 @@ class NetworkManager:
                 if not data:
                     print(f"기기 {device_num} ({addr}): 데이터 수신 없이 연결 종료")
                     break
+
+                with self.connection_lock:
+                    if device_num == 1:
+                        self.device1_data_received = True
+                    elif device_num == 2:
+                        self.device2_data_received = True
+
                 print(f"기기 {device_num}로부터 데이터 수신: {data.decode('utf-8')}")
         except (socket.error, ConnectionResetError):
             print(f"기기 {device_num} ({addr}) 연결 끊김.")
