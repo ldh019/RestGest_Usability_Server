@@ -19,7 +19,7 @@ class NetworkManager:
         self.message_queue = []
 
     def handle_client(self, conn, addr, device_num):
-        print(f"기기 {device_num} ({addr}) 연결됨")
+        print(f"Device {device_num} ({addr}) connected")
         with self.connection_lock:
             if device_num == 1:
                 self.device1_connected = True
@@ -32,25 +32,24 @@ class NetworkManager:
                     continue
                 data = conn.recv(1024)
                 if not data:
-                    print(f"기기 {device_num} ({addr}): 데이터 수신 없이 연결 종료")
+                    print(f"Device {device_num} ({addr}): Connection closed without data reception")
                     break
 
                 with self.connection_lock:
                     message = data.decode('utf-8').strip()
-                    if message == "ACCEL_TRIGGER":
-                        # 기기 번호와 메시지를 함께 큐에 추가
+                    if message == "[TOUCH]":
                         self.message_queue.append(str(device_num))
+                        print(f"Added device {device_num} to message queue")  # Debug output
 
-                        # 게임 시작 대기 화면을 위한 데이터 수신 상태 업데이트
                         if device_num == 1:
                             self.device1_data_received = True
                         elif device_num == 2:
                             self.device2_data_received = True
 
-                    print(f"기기 {device_num}로부터 데이터 수신: {message}")
+                    print(f"Data received from device {device_num}: {message}")
 
         except (socket.error, ConnectionResetError):
-            print(f"기기 {device_num} ({addr}) 연결 끊김.")
+            print(f"Device {device_num} ({addr}) connection lost.")
         finally:
             with self.connection_lock:
                 if device_num == 1:
@@ -72,10 +71,10 @@ class NetworkManager:
             self.server_socket.setblocking(False)
             self.server_socket.bind((HOST, PORT))
             self.server_socket.listen(2)
-            print(f"서버가 {self.server_ip}:{PORT} 에서 연결을 기다리는 중입니다.")
+            print(f"Server waiting for connections at {self.server_ip}:{PORT}.")
             return True
         except socket.error as e:
-            print(f"서버 소켓 생성 실패: {e}")
+            print(f"Server socket creation failed: {e}")
             return False
 
     def accept_connections(self):
@@ -89,15 +88,17 @@ class NetworkManager:
                         with self.connection_lock:
                             if not self.device1_connected:
                                 self.connections[1] = conn
+                                print(f"Assigning {addr} as DEVICE 1")  # Debug output
                                 threading.Thread(target=self.handle_client, args=(conn, addr, 1), daemon=True).start()
                             elif not self.device2_connected:
                                 self.connections[2] = conn
+                                print(f"Assigning {addr} as DEVICE 2")  # Debug output
                                 threading.Thread(target=self.handle_client, args=(conn, addr, 2), daemon=True).start()
                             else:
-                                print("최대 연결 수를 초과했습니다. 연결을 거부합니다.")
+                                print("Maximum connections exceeded. Connection refused.")
                                 conn.close()
                     except socket.error as e:
-                        print(f"연결 수락 오류: {e}")
+                        print(f"Connection accept error: {e}")
 
     def close_server(self):
         if self.server_socket:
