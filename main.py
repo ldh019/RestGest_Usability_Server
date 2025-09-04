@@ -4,6 +4,7 @@ import socket
 import threading
 import select
 import time
+import random
 from screens import ScreenManager
 from network import NetworkManager
 
@@ -36,6 +37,19 @@ game_start_time = 0
 game_end_time = 0
 game_score = 0
 
+# 뱀 게임 관련 변수
+snake_speed = 15
+snake_block_size = 20
+snake_list = []
+snake_length = 1
+snake_x = SCREEN_WIDTH // 2
+snake_y = SCREEN_HEIGHT // 2
+direction = "RIGHT"
+change_to = direction
+food_x = 0
+food_y = 0
+game_over = False
+
 try:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
@@ -49,6 +63,25 @@ server_port = 9090
 # 클래스 인스턴스 생성
 screen_manager = ScreenManager(screen, SCREEN_WIDTH, SCREEN_HEIGHT, fonts)
 network_manager = NetworkManager(server_ip, server_port)
+
+
+def reset_game():
+    """게임 상태를 초기화하는 함수"""
+    global snake_list, snake_length, snake_x, snake_y, direction, change_to, food_x, food_y, game_over, game_score
+    snake_list = []
+    snake_length = 1
+    snake_x = SCREEN_WIDTH // 2
+    snake_y = SCREEN_HEIGHT // 2
+    direction = "RIGHT"
+    change_to = direction
+    food_x = round(random.randrange(0, SCREEN_WIDTH - snake_block_size) / 20.0) * 20.0
+    food_y = round(random.randrange(0, SCREEN_HEIGHT - snake_block_size) / 20.0) * 20.0
+    game_over = False
+    game_score = 0
+    network_manager.device1_data_received = False
+    network_manager.device2_data_received = False
+    print("Game state reset.")
+
 
 # 메인 루프
 running = True
@@ -76,10 +109,10 @@ while running:
                 if screen_manager.is_stop_button_clicked(mouse_pos):
                     game_state = "results"
                     game_end_time = time.time()
-                    game_score = int(game_end_time - game_start_time)
                     print("Game Stopped. Score:", game_score)
             elif current_state == "snake_game" and game_state == "results":
                 if screen_manager.is_restart_button_clicked(mouse_pos):
+                    reset_game()
                     current_state = "snake_game"
                     game_state = "countdown"
                     countdown_start_time = time.time()
@@ -138,19 +171,98 @@ while running:
                     countdown_start_time = time.time()
                     print("Data received from both devices. Countdown started.")
 
-            elif game_state == "countdown":
-                countdown_time = int(3 - (time.time() - countdown_start_time) + 0.5)
-                if countdown_time <= 0:
-                    game_state = "in_progress"
-                    game_start_time = time.time()
-                    print("Game started!")
+            # 카운트다운 로직을 이벤트 루프 밖으로 이동
+            if game_state == "countdown":
+                pass
 
             elif game_state == "in_progress":
-                pass
+
+                # 워치에서 온 메시지 처리 (방향 변경)
+                if network_manager.message_queue:
+                    message = network_manager.message_queue.pop(0)
+
+                    # 시계 방향 회전 (기기 2)
+                    if message == "2":
+                        if direction == "UP":
+                            change_to = "RIGHT"
+                        elif direction == "RIGHT":
+                            change_to = "DOWN"
+                        elif direction == "DOWN":
+                            change_to = "LEFT"
+                        elif direction == "LEFT":
+                            change_to = "UP"
+
+                    # 반시계 방향 회전 (기기 1)
+                    elif message == "1":
+                        if direction == "UP":
+                            change_to = "LEFT"
+                        elif direction == "LEFT":
+                            change_to = "DOWN"
+                        elif direction == "DOWN":
+                            change_to = "RIGHT"
+                        elif direction == "RIGHT":
+                            change_to = "UP"
+
+                # 키보드 입력으로도 방향 변경 가능하게 추가 (디버깅용)
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        change_to = "UP"
+                    elif event.key == pygame.K_DOWN:
+                        change_to = "DOWN"
+                    elif event.key == pygame.K_LEFT:
+                        change_to = "LEFT"
+                    elif event.key == pygame.K_RIGHT:
+                        change_to = "RIGHT"
+
+                # 뱀 방향 업데이트
+                if change_to == "UP" and not direction == "DOWN":
+                    direction = "UP"
+                elif change_to == "DOWN" and not direction == "UP":
+                    direction = "DOWN"
+                elif change_to == "LEFT" and not direction == "RIGHT":
+                    direction = "LEFT"
+                elif change_to == "RIGHT" and not direction == "LEFT":
+                    direction = "RIGHT"
+
+                # 뱀 위치 업데이트
+                if direction == "UP":
+                    snake_y -= snake_block_size
+                elif direction == "DOWN":
+                    snake_y += snake_block_size
+                elif direction == "LEFT":
+                    snake_x -= snake_block_size
+                elif direction == "RIGHT":
+                    snake_x += snake_block_size
+
+                # 뱀 몸통 추가
+                snake_head = [snake_x, snake_y]
+                snake_list.append(snake_head)
+                if len(snake_list) > snake_length:
+                    del snake_list[0]
+
+                # 충돌 감지
+                if snake_x < 0 or snake_x >= SCREEN_WIDTH or snake_y < 0 or snake_y >= SCREEN_HEIGHT:
+                    game_over = True
+                for block in snake_list[:-1]:
+                    if block == snake_head:
+                        game_over = True
+
+                if game_over:
+                    game_state = "results"
+                    game_end_time = time.time()
+                    print("Game Over. Score:", game_score)
+
+                # 먹이 먹었는지 확인
+                if snake_x == food_x and snake_y == food_y:
+                    snake_length += 1
+                    game_score += 1
+                    food_x = round(random.randrange(0, SCREEN_WIDTH - snake_block_size) / 20.0) * 20.0
+                    food_y = round(random.randrange(0, SCREEN_HEIGHT - snake_block_size) / 20.0) * 20.0
 
             elif game_state == "results":
                 pass
 
+    # 화면 그리기
     if current_state == "user_number_input":
         screen_manager.draw_user_number_input(user_number)
     elif current_state == "condition_selection":
@@ -171,20 +283,104 @@ while running:
                 network_manager.device2_data_received
             )
         elif game_state == "countdown":
-            # 1 아래로 내려가지 않도록 수정
-            countdown_time = max(1, int(3 - (time.time() - countdown_start_time) + 0.5))
+            countdown_time = int(3 - (time.time() - countdown_start_time) + 0.5)
             screen_manager.draw_countdown(countdown_time)
-            # 0이 되었을 때 바로 시작
             if countdown_time <= 0:
                 game_state = "in_progress"
                 game_start_time = time.time()
+                reset_game()
         elif game_state == "in_progress":
-            screen_manager.draw_in_progress()
+            screen_manager.draw_in_progress(snake_list, snake_block_size, food_x, food_y)
+            # 뱀 이동 로직을 그리기 직전에 실행
+
+            # 워치에서 온 메시지 처리 (방향 변경)
+            if network_manager.message_queue:
+                message = network_manager.message_queue.pop(0)
+
+                # 시계 방향 회전 (기기 2)
+                if message == "2":
+                    if direction == "UP":
+                        change_to = "RIGHT"
+                    elif direction == "RIGHT":
+                        change_to = "DOWN"
+                    elif direction == "DOWN":
+                        change_to = "LEFT"
+                    elif direction == "LEFT":
+                        change_to = "UP"
+
+                # 반시계 방향 회전 (기기 1)
+                elif message == "1":
+                    if direction == "UP":
+                        change_to = "LEFT"
+                    elif direction == "LEFT":
+                        change_to = "DOWN"
+                    elif direction == "DOWN":
+                        change_to = "RIGHT"
+                    elif direction == "RIGHT":
+                        change_to = "UP"
+
+            # 키보드 입력으로도 방향 변경 가능하게 추가 (디버깅용)
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:
+                        change_to = "UP"
+                    elif event.key == pygame.K_DOWN:
+                        change_to = "DOWN"
+                    elif event.key == pygame.K_LEFT:
+                        change_to = "LEFT"
+                    elif event.key == pygame.K_RIGHT:
+                        change_to = "RIGHT"
+
+            # 뱀 방향 업데이트
+            if change_to == "UP" and not direction == "DOWN":
+                direction = "UP"
+            elif change_to == "DOWN" and not direction == "UP":
+                direction = "DOWN"
+            elif change_to == "LEFT" and not direction == "RIGHT":
+                direction = "LEFT"
+            elif change_to == "RIGHT" and not direction == "LEFT":
+                direction = "RIGHT"
+
+            # 뱀 위치 업데이트
+            if direction == "UP":
+                snake_y -= snake_block_size
+            elif direction == "DOWN":
+                snake_y += snake_block_size
+            elif direction == "LEFT":
+                snake_x -= snake_block_size
+            elif direction == "RIGHT":
+                snake_x += snake_block_size
+
+            # 뱀 몸통 추가
+            snake_head = [snake_x, snake_y]
+            snake_list.append(snake_head)
+            if len(snake_list) > snake_length:
+                del snake_list[0]
+
+            # 충돌 감지
+            if snake_x < 0 or snake_x >= SCREEN_WIDTH or snake_y < 0 or snake_y >= SCREEN_HEIGHT:
+                game_over = True
+            for block in snake_list[:-1]:
+                if block == snake_head:
+                    game_over = True
+
+            if game_over:
+                game_state = "results"
+                game_end_time = time.time()
+                print("Game Over. Score:", game_score)
+
+            # 먹이 먹었는지 확인
+            if snake_x == food_x and snake_y == food_y:
+                snake_length += 1
+                game_score += 1
+                food_x = round(random.randrange(0, SCREEN_WIDTH - snake_block_size) / 20.0) * 20.0
+                food_y = round(random.randrange(0, SCREEN_HEIGHT - snake_block_size) / 20.0) * 20.0
         elif game_state == "results":
             game_duration = game_end_time - game_start_time
             screen_manager.draw_results(game_duration, game_score)
 
     pygame.display.flip()
+    pygame.time.Clock().tick(snake_speed)
 
 network_manager.close_server()
 pygame.quit()

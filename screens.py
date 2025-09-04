@@ -110,7 +110,7 @@ class ScreenManager:
 
     def draw_waiting_for_data(self, device1_data_received, device2_data_received):
         self.screen.fill(self.WHITE)
-        self.draw_back_button()  # 뒤로가기 버튼 추가
+        self.draw_back_button()
         title_text = self.fonts['large'].render("게임 시작 전 대기", True, self.BLACK)
         title_rect = title_text.get_rect(center=(self.screen_width // 2, 250))
         self.screen.blit(title_text, title_rect)
@@ -138,15 +138,13 @@ class ScreenManager:
         countdown_rect = countdown_text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
         self.screen.blit(countdown_text, countdown_rect)
 
-    def draw_in_progress(self):
+    def draw_in_progress(self, snake_list, snake_block_size, food_x, food_y):
         self.screen.fill(self.BLACK)
         self.draw_stop_button()
-        title_text = self.fonts['large'].render("게임 진행 중...", True, self.WHITE)
-        title_rect = title_text.get_rect(center=(self.screen_width // 2, 150))
-        self.screen.blit(title_text, title_rect)
-        message_text = self.fonts['medium'].render("이곳에 뱀 게임 코드를 구현하면 됩니다.", True, self.GRAY)
-        message_rect = message_text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
-        self.screen.blit(message_text, message_rect)
+        for block in snake_list:
+            pygame.draw.rect(self.screen, self.GREEN,
+                             pygame.Rect(block[0], block[1], snake_block_size, snake_block_size))
+        pygame.draw.rect(self.screen, self.RED, pygame.Rect(food_x, food_y, snake_block_size, snake_block_size))
 
     def draw_results(self, game_duration, game_score):
         self.screen.fill(self.WHITE)

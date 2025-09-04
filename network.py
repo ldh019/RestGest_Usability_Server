@@ -2,6 +2,7 @@ import socket
 import threading
 import select
 import time
+import queue
 
 
 class NetworkManager:
@@ -15,6 +16,7 @@ class NetworkManager:
         self.device2_connected = False
         self.device1_data_received = False
         self.device2_data_received = False
+        self.message_queue = []
 
     def handle_client(self, conn, addr, device_num):
         print(f"기기 {device_num} ({addr}) 연결됨")
@@ -34,12 +36,19 @@ class NetworkManager:
                     break
 
                 with self.connection_lock:
-                    if device_num == 1:
-                        self.device1_data_received = True
-                    elif device_num == 2:
-                        self.device2_data_received = True
+                    message = data.decode('utf-8').strip()
+                    if message == "ACCEL_TRIGGER":
+                        # 기기 번호와 메시지를 함께 큐에 추가
+                        self.message_queue.append(str(device_num))
 
-                print(f"기기 {device_num}로부터 데이터 수신: {data.decode('utf-8')}")
+                        # 게임 시작 대기 화면을 위한 데이터 수신 상태 업데이트
+                        if device_num == 1:
+                            self.device1_data_received = True
+                        elif device_num == 2:
+                            self.device2_data_received = True
+
+                    print(f"기기 {device_num}로부터 데이터 수신: {message}")
+
         except (socket.error, ConnectionResetError):
             print(f"기기 {device_num} ({addr}) 연결 끊김.")
         finally:
